@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import math
+from typing import Literal
 
 import numpy as np
 
 from .config import Controls
-
 
 BLOCH_TO_OPENGL = np.array(
     [
@@ -27,7 +27,7 @@ MAX_ELEVATION = math.pi / 2.0 - 0.01
 def blochToOpenGl(point: tuple[float, float, float]) -> tuple[float, float, float]:
     """Map a Bloch-space point into OpenGL space using the shared convention matrix."""
     mapped = BLOCH_TO_OPENGL @ np.asarray(point, dtype=np.float64)
-    return (float(mapped[0]), float(mapped[1]), float(mapped[2]))
+    return float(mapped[0]), float(mapped[1]), float(mapped[2])
 
 
 def toGlBytes(matrix: np.ndarray) -> bytes:

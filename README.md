@@ -46,6 +46,9 @@ viewed along its axis.
 ## Interface
 
 - The state vector is drawn from the origin to the current Bloch vector, with a dot at the tip.
+- A trailing line follows the vector: fully opaque for the configured solid duration, then fading
+  linearly to transparent. Separate lab and rotating histories are recorded continuously, so `F`
+  switches between complete trails with no redraw or popping.
 - The window title shows the active frame: "Lab Frame" or "Rotating Frame".
 - The three axes are dim gray; the sphere wireframe uses low-opacity latitude/longitude circles.
 - Zooming in far enough clips the labels, since they sit just outside the sphere surface.
@@ -66,6 +69,20 @@ Every value below is a number (except `rwa`) and can be changed at runtime. The 
 | `font_size`         | `20`    | Label font size; minimum 8                                              |
 | `timespeed`         | `1.0`   | Simulated seconds per real second, clamped to 0-1 (0 freezes the state) |
 | `max_frame_rate`    | `60`    | Main-loop frame-rate cap                                                |
+| `trail_solid_duration`  | `0.5`      | Simulated seconds of fully opaque trail behind the vector          |
+| `trail_fading_duration` | `1.5`      | Simulated seconds of linear fade after the solid head              |
+| `trail_sample_interval` | `0.016667` | Simulated seconds between trail samples (about 60 per second)      |
+
+The trail duration is measured in **simulated** time, so it is unaffected by `timespeed`, frame
+rate, or camera distance. Setting both durations to `0` disables the trail. Durations are clamped to
+`>= 0`, and the sample interval is clamped to at least `1e-4` simulated seconds. If a request would
+need more than 100,000 samples per history, the interval is raised automatically and a warning is
+printed.
+
+Editing durations while running applies immediately: shrinking keeps the newest points, and the
+same stored samples follow the new solid/fade split. Changing the sample interval keeps the existing
+history and starts sampling at the new cadence right away. `R` clears both trails along with the
+state reset.
 
 ### `controls`
 
@@ -126,8 +143,8 @@ uv run python -m unittest discover -s tests -v
 ```
 
 The suite covers state evolution (norm, RWA exactness, RK4 convergence, static-field limit),
-configuration validation and hot reload, and the camera/projection conventions. There are no
-automated GL tests; verify rendering by running the simulator.
+configuration validation and hot reload, trail ring/fade/sampling behaviour, and the camera/projection
+conventions. There are no automated GL tests; verify rendering by running the simulator.
 
 ## Troubleshooting
 

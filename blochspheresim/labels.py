@@ -54,9 +54,9 @@ def projectPoint(
     height: int,
 ) -> tuple[float, float] | None:
     """Project a world point into pixel coordinates, or None when it is behind the camera."""
-    clip = view_projection @ np.array([point[0], point[1], point[2], 1.0], dtype=np.float64)
+    clip = view_projection @ np.array([*point, 1.0], dtype=np.float64)
     if clip[3] <= 0.0:
         return None
 
     ndc = clip[:3] / clip[3]
-    return ((ndc[0] + 1.0) * 0.5 * width, (1.0 - ndc[1]) * 0.5 * height)
+    return (ndc[0] + 1.0) * 0.5 * width, (1.0 - ndc[1]) * 0.5 * height

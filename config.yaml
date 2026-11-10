@@ -10,6 +10,9 @@ bloch_visuals:
   font_size: 20
   timespeed: 1.0            # 0..1; scales simulated time per real second
   max_frame_rate: 60        # loop cap in frames per second
+  trail_solid_duration: 0.5       # simulated seconds of fully opaque trail behind the vector
+  trail_fading_duration: 1.5      # simulated seconds fading linearly to transparent
+  trail_sample_interval: 0.016667 # simulated seconds between trail points; 0 durations disable
 
 controls:
   pan_sensitivity: 0.005    # radians of orbit per pixel of middle-drag

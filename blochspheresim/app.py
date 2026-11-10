@@ -16,17 +16,19 @@ from .config import (
     ConfigWatcher,
     buildConfig,
     collectPhysicsWarnings,
+    collectTrailWarnings,
     loadConfig,
 )
 from .labels import LabelSet
 from .renderer import Renderer
+from .trail import TrailRecorder
 
 
 WINDOW_SIZE = (1280, 800)
 WINDOW_CAPTION = "Bloch Sphere Simulator"
 LAB_FRAME = "Lab Frame"
 ROTATING_FRAME = "Rotating Frame"
-MAX_REAL_STEP = 1.0
+MAX_REAL_STEP = 0.1
 
 
 class App:
@@ -45,6 +47,7 @@ class App:
         self._renderer = Renderer(self._context, self._config.bloch_visuals, WINDOW_SIZE)
         self._camera = Camera(self._config.controls)
         self._state = self._createState(self._config)
+        self._trails = TrailRecorder(self._config.bloch_visuals)
         self._labels = LabelSet()
         self._watcher = ConfigWatcher(self._config_path)
 
@@ -66,7 +69,7 @@ class App:
                 dt_real = clock.tick(max_frame_rate) / 1000.0
                 dt_sim = min(dt_real, MAX_REAL_STEP) * self._config.bloch_visuals.timespeed
 
-                self._state.advanceTime(dt_sim)
+                self._trails.advance(self._state, dt_sim)
                 self._handleEvents()
                 self._pollConfig(dt_real)
                 self._draw()
@@ -137,6 +140,7 @@ class App:
             self._updateCaption()
         elif event.key == pygame.K_r:
             self._state.reset()
+            self._trails.clear()
             self._camera.reset(self._config.controls)
 
     def _handleMouseButtonDown(self, event: pygame.event.Event) -> None:
@@ -163,6 +167,7 @@ class App:
         """Apply a validated config without disturbing the simulation phases."""
         physics = config.physics
         self._renderer.applyVisuals(config.bloch_visuals)
+        self._trails.applyVisuals(config.bloch_visuals)
         self._camera.applyControls(config.controls)
         self._state.setFields(
             physics.gamma,
@@ -198,6 +203,8 @@ class App:
             self._camera,
             self._state.getDisplayVector(self._rotating),
             self._labels,
+            self._trails,
+            self._rotating,
         )
         pygame.display.flip()
 
@@ -207,8 +214,12 @@ class App:
         pygame.display.set_caption(f"{WINDOW_CAPTION} - {frame}")
 
     def _printWarnings(self, config: Config) -> None:
-        """Print each physics warning at most once per session."""
-        for message in collectPhysicsWarnings(config.physics):
+        """Print each configuration warning at most once per session."""
+        messages = [
+            *collectPhysicsWarnings(config.physics),
+            *collectTrailWarnings(config.bloch_visuals),
+        ]
+        for message in messages:
             if message not in self._printed_warnings:
                 print(f"warning: {message}")
                 self._printed_warnings.add(message)

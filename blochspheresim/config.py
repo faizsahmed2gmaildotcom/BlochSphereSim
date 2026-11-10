@@ -15,6 +15,8 @@ DEFAULT_CONFIG_PATH = Path("config.yaml")
 MIN_FONT_SIZE = 8
 MIN_INTEGRATION_STEPS = 16
 MAX_ESTIMATED_STEP_RATE = 250_000.0
+MIN_TRAIL_SAMPLE_INTERVAL = 1.0e-4
+MAX_TRAIL_POINTS = 100_000
 
 
 class ConfigError(ValueError):
@@ -33,6 +35,9 @@ class BlochVisuals:
     font_size: int = 20
     timespeed: float = 1.0
     max_frame_rate: int = 60
+    trail_solid_duration: float = 0.5
+    trail_fading_duration: float = 1.5
+    trail_sample_interval: float = 0.016667
 
 
 @dataclass(frozen=True)
@@ -119,6 +124,24 @@ def collectPhysicsWarnings(physics: Physics) -> list[str]:
     return warnings
 
 
+def collectTrailWarnings(visuals: BlochVisuals) -> list[str]:
+    """Return a warning when the requested trail was clamped to the point limit."""
+    if computeTrailCapacity(visuals) < MAX_TRAIL_POINTS:
+        return []
+    return [
+        f"trail capacity limited to {MAX_TRAIL_POINTS:,} points; "
+        f"using a sample interval of {visuals.trail_sample_interval:.6f} simulated seconds"
+    ]
+
+
+def computeTrailCapacity(visuals: BlochVisuals) -> int:
+    """Return the ring capacity for one trail, or zero when the trail is disabled."""
+    total = visuals.trail_solid_duration + visuals.trail_fading_duration
+    if total <= 0.0:
+        return 0
+    return min(MAX_TRAIL_POINTS, math.ceil(total / visuals.trail_sample_interval) + 2)
+
+
 class ConfigWatcher:
     """Reload a config file when its modification time changes."""
 
@@ -161,6 +184,14 @@ def _buildVisuals(section: dict[str, Any]) -> BlochVisuals:
     latitude_count = _snapOdd(_readInt(section, "latitude_count", defaults.latitude_count))
     longitude_count = _snapEven(_readInt(section, "longitude_count", defaults.longitude_count))
 
+    solid = max(0.0, _readFloat(section, "trail_solid_duration", defaults.trail_solid_duration))
+    fading = max(0.0, _readFloat(section, "trail_fading_duration", defaults.trail_fading_duration))
+    interval = max(
+        MIN_TRAIL_SAMPLE_INTERVAL,
+        _readFloat(section, "trail_sample_interval", defaults.trail_sample_interval),
+    )
+    interval = _clampTrailInterval(solid + fading, interval)
+
     return BlochVisuals(
         latitude_count=latitude_count,
         longitude_count=longitude_count,
@@ -170,7 +201,19 @@ def _buildVisuals(section: dict[str, Any]) -> BlochVisuals:
         font_size=max(MIN_FONT_SIZE, _readInt(section, "font_size", defaults.font_size)),
         timespeed=_clamp(_readFloat(section, "timespeed", defaults.timespeed), 0.0, 1.0),
         max_frame_rate=max(1, _readInt(section, "max_frame_rate", defaults.max_frame_rate)),
+        trail_solid_duration=solid,
+        trail_fading_duration=fading,
+        trail_sample_interval=interval,
     )
+
+
+def _clampTrailInterval(total: float, interval: float) -> float:
+    """Raise the sample interval so one trail never exceeds the point limit."""
+    if total <= 0.0:
+        return interval
+    if math.ceil(total / interval) + 2 <= MAX_TRAIL_POINTS:
+        return interval
+    return total / (MAX_TRAIL_POINTS - 2)
 
 
 def _buildControls(section: dict[str, Any]) -> Controls:

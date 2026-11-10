@@ -15,7 +15,7 @@ class BlochState:
     and the Bloch vector obeys `dv/dt = gamma * v x B(t)`.
 
     With `rwa` on, the evolution uses the rotating-wave solution: in the frame rotating at the
-    Larmor frequency the drive becomes the static field `b_1 * (cos rf_phase, sin rf_phase, 0)`,
+    Larmor frequency, the drive becomes the static field `b_1 * (cos rf_phase, sin rf_phase, 0)`,
     so the state rotates about that axis at the Rabi frequency `gamma * b_1`. That solution is
     exact for the rotating-wave model and works for any `dt`.
 
@@ -72,7 +72,7 @@ class BlochState:
         )
 
     def getDisplayVector(self, rotating: bool) -> tuple[float, float, float]:
-        """Return the lab-frame vector, or the vector viewed in the rotating frame."""
+        """Return the lab-frame vector in Bloch space, or the vector viewed in the rotating frame."""
         vector = self.getVector()
         if not rotating:
             return vector

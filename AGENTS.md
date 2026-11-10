@@ -24,7 +24,8 @@ blochspheresim/
   camera.py        orbit camera, matrices, Bloch -> OpenGL mapping
   config.py        dataclasses, YAML validation, ConfigWatcher
   labels.py        axis label definitions, expansion state, projection
-  renderer.py      GL programs, geometry, text overlay
+  renderer.py      GL programs, geometry, text overlay, trail pass
+  trail.py         ring-buffer histories, fixed-grid sampler, fade math
   __main__.py      entry point
 config.yaml        runtime settings (hot-reloaded)
 tests/             stdlib unittest; no headless-GL tests
@@ -75,11 +76,34 @@ Follow `faiz-code-style`:
   swizzle `"BGRA"`. Changing either flips/miscolors the text.
 - Keep the sphere wireframe only; no solid surface or depth occlusion of labels.
 
+## Trail invariants
+
+- Sample by **simulated time**, never by frame or distance. `TrailRecorder.advance` sub-steps
+  `BlochState.advanceTime` onto the `trail_sample_interval` grid; physics must end at the same
+  `lab_time` it would without sampling. RWA chunking is exact; full-model chunking stays <1e-6 deg.
+- Each frame has its own fixed-capacity ring (`Trail`) storing `(x, y, z, born)` float32 in Bloch
+  space. Lab records `getVector()`; rotating records `getDisplayVector(True)` **at capture time**.
+  Never re-project stored lab history with the current `frame_phase`: it smears into a ring.
+- Both histories are recorded every sample so `F` can switch instantly. Only the active one is
+  drawn; toggling frames must not touch buffers.
+- Fade is a shader function of `now - born`: opaque through `trail_solid_duration`, linear to zero
+  across `trail_fading_duration`, hard cut when the fade is zero. `computeAlpha` pins the same rule.
+- Capacity is `ceil((solid + fade) / interval) + 2`, capped at `MAX_TRAIL_POINTS = 100_000` by
+  raising the interval in config validation. `0` total duration means no allocation and no drawing.
+- Resize keeps the newest points and bumps `generation`; recording bumps `revision`. The renderer
+  uploads incrementally via `revision`, full-rebuilds on `generation`, and mirrors each write into a
+  `2 * capacity` VBO so one `GL_LINE_STRIP` covers the wrap.
+- `R` clears both trails and the sampling accumulator. `timespeed: 0` freezes both state and fade.
+- Trail drawing uses `depth_mask = False` (depth test stays on) and is drawn before the state vector
+  so it can never occlude the vector. A two-vertex head connector joins the newest sample to the
+  current vector.
+
 ## Testing
 
 - Stdlib `unittest` only. Physics/config/camera logic must be testable without a window.
 - Run the full suite before finishing. Manual smoke test: window opens, sphere and labels render,
-  `F` toggles frames, `R` resets, clicks expand labels, editing `config.yaml` applies live.
+  `F` toggles frames, `R` resets, clicks expand labels, editing `config.yaml` applies live, and the
+  trail fades in simulated time (freezing `timespeed` must freeze the fade too).
 - When changing camera/matrix code, rerun `testAxisMapping` and `testTranslationLandsInFourthGlslColumn`.
 
 ## Deferred scope

@@ -11,8 +11,11 @@ from blochspheresim.config import (
     BlochVisuals,
     ConfigError,
     ConfigWatcher,
+    MAX_TRAIL_POINTS,
     buildConfig,
     collectPhysicsWarnings,
+    collectTrailWarnings,
+    computeTrailCapacity,
     loadConfig,
 )
 
@@ -174,6 +177,64 @@ class PhysicsWarningTest(unittest.TestCase):
         """Warn when the full model cannot keep up."""
         config = buildConfig({"physics": {"rwa": False, "b_z": 1.0e5}})
         self.assertTrue(collectPhysicsWarnings(config.physics))
+
+
+class TrailConfigTest(unittest.TestCase):
+    """Trail settings validate, clamp, and size their rings."""
+
+    def testDefaults(self) -> None:
+        """Use the documented default durations and cadence."""
+        visuals = buildConfig({}).bloch_visuals
+        self.assertEqual(visuals.trail_solid_duration, 0.5)
+        self.assertEqual(visuals.trail_fading_duration, 1.5)
+        self.assertAlmostEqual(visuals.trail_sample_interval, 0.016667, places=9)
+        self.assertEqual(computeTrailCapacity(visuals), 122)
+
+    def testZeroDurationDisables(self) -> None:
+        """Report zero capacity when both durations are zero."""
+        visuals = buildConfig(
+            {"bloch_visuals": {"trail_solid_duration": 0.0, "trail_fading_duration": 0.0}}
+        ).bloch_visuals
+        self.assertEqual(computeTrailCapacity(visuals), 0)
+
+    def testDurationsClampAndIntervalFloor(self) -> None:
+        """Clamp negative durations and enforce the minimum sampling interval."""
+        visuals = buildConfig(
+            {
+                "bloch_visuals": {
+                    "trail_solid_duration": -1.0,
+                    "trail_fading_duration": -2.0,
+                    "trail_sample_interval": 0.0,
+                }
+            }
+        ).bloch_visuals
+        self.assertEqual(visuals.trail_solid_duration, 0.0)
+        self.assertEqual(visuals.trail_fading_duration, 0.0)
+        self.assertEqual(visuals.trail_sample_interval, 1.0e-4)
+
+    def testCapacityLimitRaisesInterval(self) -> None:
+        """Raise the interval and warn when the requested trail is too long."""
+        visuals = buildConfig(
+            {
+                "bloch_visuals": {
+                    "trail_solid_duration": 500.0,
+                    "trail_fading_duration": 500.0,
+                    "trail_sample_interval": 1.0e-4,
+                }
+            }
+        ).bloch_visuals
+        self.assertEqual(computeTrailCapacity(visuals), MAX_TRAIL_POINTS)
+        self.assertTrue(collectTrailWarnings(visuals))
+
+    def testDefaultsDoNotWarn(self) -> None:
+        """Stay silent for the default trail settings."""
+        self.assertEqual(collectTrailWarnings(buildConfig({}).bloch_visuals), [])
+
+    def testMalformedTrailValueRaises(self) -> None:
+        """Reject non-numeric or non-finite trail settings."""
+        for value in ("long", float("nan")):
+            with self.subTest(value=value), self.assertRaises(ConfigError):
+                buildConfig({"bloch_visuals": {"trail_solid_duration": value}})
 
 
 if __name__ == "__main__":

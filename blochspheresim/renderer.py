@@ -11,6 +11,7 @@ import pygame
 from .camera import Camera, blochToOpenGl, toGlBytes
 from .config import BlochVisuals
 from .labels import AXIS_LABELS, LabelSet, projectPoint
+from .trail import Trail, TrailRecorder
 
 
 BACKGROUND_COLOR = (0.04, 0.05, 0.08)
@@ -19,8 +20,11 @@ LONGITUDE_COLOR = (0.60, 0.75, 0.90)
 AXIS_COLOR = (0.70, 0.70, 0.70, 0.35)
 STATE_COLOR = (1.0, 0.55, 0.15, 1.0)
 TIP_COLOR = (1.0, 0.75, 0.20, 1.0)
+TRAIL_COLOR = (0.95, 0.45, 0.12, 0.85)
+TRAIL_HEAD_COLOR = (0.95, 0.50, 0.15, 1.0)
 TEXT_COLOR = (255, 255, 255, 255)
 POINT_SIZE = 10.0
+TRAIL_STRIDE_BYTES = 16
 LATITUDE_SEGMENTS = 128
 LONGITUDE_SEGMENTS = 64
 LABEL_MARGIN = 4
@@ -80,6 +84,63 @@ void main() {
 }
 """
 
+TRAIL_VERTEX_SHADER = """
+#version 330 core
+
+in vec3 in_pos;
+in float in_born;
+
+uniform mat4 u_mvp;
+uniform float u_now;
+uniform float u_solid;
+uniform float u_fade;
+
+out float v_alpha;
+
+void main() {
+    gl_Position = u_mvp * vec4(in_pos, 1.0);
+
+    float age = u_now - in_born;
+    float alpha = 1.0;
+    if (age < 0.0) {
+        alpha = 0.0;
+    } else if (age > u_solid) {
+        alpha = u_fade > 0.0 ? clamp((u_solid + u_fade - age) / u_fade, 0.0, 1.0) : 0.0;
+    }
+    v_alpha = alpha;
+}
+"""
+
+TRAIL_FRAGMENT_SHADER = """
+#version 330 core
+
+uniform vec4 u_color;
+
+in float v_alpha;
+out vec4 f_color;
+
+void main() {
+    f_color = vec4(u_color.rgb, u_color.a * v_alpha);
+}
+"""
+
+
+class _TrailBuffers:
+    """GL resources and upload bookkeeping for one trail history."""
+
+    def __init__(
+        self,
+        buffer: moderngl.Buffer,
+        vao: moderngl.VertexArray,
+        capacity: int,
+    ) -> None:
+        """Store the resources and mark the history as not yet uploaded."""
+        self.buffer = buffer
+        self.vao = vao
+        self.capacity = capacity
+        self.revision = -1
+        self.generation = -1
+
 
 class Renderer:
     """Own the GL programs, geometry, and the camera-facing text overlay."""
@@ -110,6 +171,11 @@ class Renderer:
             vertex_shader=TEXT_VERTEX_SHADER,
             fragment_shader=TEXT_FRAGMENT_SHADER,
         )
+        self._trail_program = context.program(
+            vertex_shader=TRAIL_VERTEX_SHADER,
+            fragment_shader=TRAIL_FRAGMENT_SHADER,
+        )
+        self._trail_buffers: dict[str, _TrailBuffers] = {}
 
         self._state_buffer = context.buffer(reserve=2 * 7 * 4)
         self._state_vao = context.vertex_array(
@@ -120,6 +186,11 @@ class Renderer:
         self._tip_vao = context.vertex_array(
             self._line_program,
             [(self._tip_buffer, "3f 4f", "in_pos", "in_color")],
+        )
+        self._connector_buffer = context.buffer(reserve=2 * 7 * 4)
+        self._connector_vao = context.vertex_array(
+            self._line_program,
+            [(self._connector_buffer, "3f 4f", "in_pos", "in_color")],
         )
 
         self._buildOverlay()
@@ -152,17 +223,135 @@ class Renderer:
         camera: Camera,
         state_vector: tuple[float, float, float],
         labels: LabelSet,
+        trails: TrailRecorder | None = None,
+        rotating: bool = False,
     ) -> list[tuple[int, tuple[int, int, int, int]]]:
         """Draw one frame and return the clickable label rectangles with their indices."""
         self._context.clear(*BACKGROUND_COLOR)
         view_projection = camera.getViewProjectionMatrix()
 
+        active_trail: Trail | None = None
+        active_buffers: _TrailBuffers | None = None
+        if trails is not None and trails.enabled:
+            lab_buffers = self._syncTrail("lab", trails.lab)
+            rotating_buffers = self._syncTrail("rotating", trails.rotating)
+            active_trail = trails.rotating if rotating else trails.lab
+            active_buffers = rotating_buffers if rotating else lab_buffers
+
         self._context.enable(moderngl.DEPTH_TEST)
         self._drawStatic(view_projection)
+        if trails is not None and active_trail is not None and active_buffers is not None:
+            self._drawTrail(
+                view_projection,
+                active_buffers,
+                active_trail,
+                state_vector,
+                trails.now,
+                trails.solid_duration,
+                trails.fading_duration,
+            )
         self._drawState(view_projection, state_vector)
         self._context.disable(moderngl.DEPTH_TEST)
 
         return self._drawLabels(view_projection, labels)
+
+    def _syncTrail(self, kind: str, trail: Trail | None) -> _TrailBuffers | None:
+        """Upload new samples for one history and return its GPU state."""
+        if trail is None or trail.count == 0:
+            return None
+
+        buffers = self._ensureTrailBuffers(kind, trail.capacity)
+        if buffers.generation != trail.generation:
+            rows = trail.getChronological()
+        elif buffers.revision != trail.revision:
+            rows = trail.getSamplesSince(buffers.revision)
+        else:
+            rows = None
+
+        if rows is not None and len(rows) > 0:
+            self._writeTrailRows(buffers, rows, trail.getSampleStart(len(rows)))
+
+        buffers.generation = trail.generation
+        buffers.revision = trail.revision
+        return buffers
+
+    def _ensureTrailBuffers(self, kind: str, capacity: int) -> _TrailBuffers:
+        """Return the mirrored buffers for a history, reallocating when capacity changes."""
+        buffers = self._trail_buffers.get(kind)
+        if buffers is not None and buffers.capacity == capacity:
+            return buffers
+
+        if buffers is not None:
+            buffers.vao.release()
+            buffers.buffer.release()
+
+        buffer = self._context.buffer(reserve=2 * capacity * TRAIL_STRIDE_BYTES)
+        vao = self._context.vertex_array(
+            self._trail_program,
+            [(buffer, "3f 1f", "in_pos", "in_born")],
+        )
+        buffers = _TrailBuffers(buffer, vao, capacity)
+        self._trail_buffers[kind] = buffers
+        return buffers
+
+    def _writeTrailRows(
+        self,
+        buffers: _TrailBuffers,
+        rows: np.ndarray,
+        first_index: int,
+    ) -> None:
+        """Write rows to a ring and its mirror, splitting at most once per copy."""
+        position = 0
+        index = first_index
+        total = len(rows)
+
+        while position < total:
+            run = min(total - position, buffers.capacity - index)
+            chunk = np.ascontiguousarray(rows[position : position + run], dtype="f4").tobytes()
+            buffers.buffer.write(chunk, offset=index * TRAIL_STRIDE_BYTES)
+            buffers.buffer.write(chunk, offset=(index + buffers.capacity) * TRAIL_STRIDE_BYTES)
+            position += run
+            index = 0
+
+    def _drawTrail(
+        self,
+        view_projection: np.ndarray,
+        buffers: _TrailBuffers,
+        trail: Trail,
+        state_vector: tuple[float, float, float],
+        now: float,
+        solid: float,
+        fading: float,
+    ) -> None:
+        """Draw the active history plus a connector from its newest sample to the vector."""
+        self._context.depth_mask = False
+
+        if trail.count >= 2:
+            program = self._trail_program
+            program["u_mvp"].write(toGlBytes(view_projection))
+            program["u_now"].value = now
+            program["u_solid"].value = solid
+            program["u_fade"].value = fading
+            program["u_color"].value = TRAIL_COLOR
+            buffers.vao.render(
+                moderngl.LINE_STRIP,
+                vertices=trail.count,
+                first=trail.getSampleStart(trail.count),
+            )
+
+        newest = trail.getNewest()
+        if newest is not None:
+            start = newest[0]
+            end = blochToOpenGl(state_vector)
+            connector = np.array(
+                [*start, *TRAIL_HEAD_COLOR, *end, *TRAIL_HEAD_COLOR],
+                dtype="f4",
+            )
+            self._connector_buffer.write(connector.tobytes())
+            self._line_program["u_mvp"].write(toGlBytes(view_projection))
+            self._connector_vao.render(moderngl.LINES)
+
+        self._context.depth_mask = True
 
     def _buildOverlay(self) -> None:
         """Create the fullscreen quad used to composite the text texture."""
@@ -291,12 +480,12 @@ class Renderer:
         self,
         view_projection: np.ndarray,
         labels: LabelSet,
-    ) -> list[tuple[int, tuple[int, int, int, int]]]:
+    ) -> list[tuple[int, pygame.Rect]]:
         """Render the axis labels into the overlay texture and return hit rectangles."""
         width, height = self._size
         self._text_surface.fill((0, 0, 0, 0))
         scale = 1.0 + self._visuals.label_offset
-        rectangles: list[tuple[int, tuple[int, int, int, int]]] = []
+        rectangles: list[tuple[int, pygame.Rect]] = []
 
         for index, label in enumerate(AXIS_LABELS):
             anchor = tuple(component * scale for component in label.axis)
