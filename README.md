@@ -20,6 +20,7 @@ Dependencies (`moderngl`, `numpy`, `pygame-ce`, `pyyaml`) are declared in `pypro
 ## Install and run
 
 ```sh
+git clone https://github.com/faizsahmed2gmaildotcom/BlochSphereSim.git && cd BlochSphereSim
 uv sync
 uv run python -m blochspheresim
 ```
