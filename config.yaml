@@ -2,22 +2,22 @@
 # Only numbers (and the rwa toggle) are configurable; labels and text are fixed in code.
 
 bloch_visuals:
-  latitude_count: 7         # forced odd, at least 1
-  longitude_count: 8        # forced even, at least 2
+  latitude_count: 7         # forced odd; at least 1
+  longitude_count: 8        # forced even; at least 2
   latitude_opacity: 0.25
   longitude_opacity: 0.55
   label_offset: 0.05        # fraction of the sphere radius beyond the surface
   font_size: 20
   timespeed: 1.0            # 0..1; scales simulated time per real second
-  max_frame_rate: 60        # loop cap in frames per second
+  max_frame_rate: 280        # loop cap in frames per second
   trail_solid_duration: 0.5       # simulated seconds of fully opaque trail behind the vector
   trail_fading_duration: 1.5      # simulated seconds fading linearly to transparent
-  trail_sample_interval: 0.016667 # simulated seconds between trail points; 0 durations disable
+  trail_sample_interval: 0.0167 # simulated seconds between trail points; 0 durations disable
 
 controls:
   pan_sensitivity: 0.005    # radians of orbit per pixel of middle-drag
   scroll_sensitivity: 0.1   # logarithmic distance change per wheel notch
-  default_distance: 3.0     # camera distance from the centre at startup and on R
+  default_distance: 3.0     # camera distance from the center at startup and on R
   min_distance: 1.5
   max_distance: 10.0
 

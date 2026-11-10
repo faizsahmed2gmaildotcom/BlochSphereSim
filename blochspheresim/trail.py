@@ -62,7 +62,7 @@ class Trail:
         return self._generation
 
     def record(self, vector: tuple[float, float, float], born: float) -> None:
-        """Append one sample (in OpenGL space), overwriting the oldest when full."""
+        """Convert a Bloch-space sample to OpenGL and append it, overwriting the oldest when full."""
         self._samples[self._head] = (*blochToOpenGl(vector), born)
         self._head = (self._head + 1) % self._capacity
         self._count = min(self._count + 1, self._capacity)
