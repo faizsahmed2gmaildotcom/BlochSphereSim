@@ -1,0 +1,30 @@
+# Bloch sphere simulator settings. Edit and save while running to hot-reload.
+# Only numbers (and the rwa toggle) are configurable; labels and text are fixed in code.
+
+bloch_visuals:
+  latitude_count: 7         # forced odd, at least 1
+  longitude_count: 8        # forced even, at least 2
+  latitude_opacity: 0.25
+  longitude_opacity: 0.55
+  label_offset: 0.05        # fraction of the sphere radius beyond the surface
+  font_size: 20
+  timespeed: 1.0            # 0..1; scales simulated time per real second
+  max_frame_rate: 60        # loop cap in frames per second
+
+controls:
+  pan_sensitivity: 0.005    # radians of orbit per pixel of middle-drag
+  scroll_sensitivity: 0.1   # logarithmic distance change per wheel notch
+  default_distance: 3.0     # camera distance from the centre at startup and on R
+  min_distance: 1.5
+  max_distance: 10.0
+
+physics:
+  gamma: 1.0                # gyromagnetic ratio, rad/s per field unit
+  b_z: 3.0                  # static field along z
+  b_1: 0.3                  # RF amplitude; keep b_1 << b_z for rotating-wave accuracy
+  rf_phase: 0.0             # RF phase in radians; pi/2 drives about the y' axis
+  rwa: true                 # true = exact rotating-wave solution, false = full model
+  integration_steps_per_period: 512   # full model only; at least 16
+
+# Real proton example (the lab view aliases; the rotating frame stays readable):
+#   gamma: 2.675e8   b_z: 1.0   b_1: 1e-5   timespeed: 1e-4   rwa: true

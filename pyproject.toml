@@ -1,0 +1,11 @@
+[project]
+name = "blochspheresim"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "moderngl>=5.13.0",
+    "numpy>=2.5.4",
+    "pygame-ce>=2.5.8",
+    "pyrr>=0.10.3",
+    "pyyaml>=6.0.3",
+]
