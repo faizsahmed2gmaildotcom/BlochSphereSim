@@ -1,3 +1,6 @@
 temp*
 plans
 research
+.venv/
+__pycache__/
+*.pyc

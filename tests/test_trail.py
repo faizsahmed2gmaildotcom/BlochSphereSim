@@ -8,6 +8,7 @@ import unittest
 import numpy as np
 
 from blochspheresim.bloch_state import BlochState
+from blochspheresim.camera import BLOCH_TO_OPENGL
 from blochspheresim.config import BlochVisuals
 from blochspheresim.trail import Trail, TrailRecorder, computeAlpha
 
@@ -23,6 +24,11 @@ def _visuals(
         trail_fading_duration=fading,
         trail_sample_interval=interval,
     )
+
+
+def _storedBloch(stored: np.ndarray) -> np.ndarray:
+    """Convert a stored OpenGL-space sample back into Bloch space."""
+    return BLOCH_TO_OPENGL.T @ np.asarray(stored, dtype=np.float64)
 
 
 def _angleDegrees(
@@ -73,8 +79,14 @@ class TrailRingTest(unittest.TestCase):
 
         rows = trail.getChronological()
         self.assertEqual(trail.count, 3)
-        self.assertEqual([row[0] for row in rows], [2.0, 3.0, 4.0])
-        self.assertEqual(trail.getNewest(), ((4.0, 0.0, 0.0), 4.0))
+        np.testing.assert_allclose(
+            [_storedBloch(row[:3])[0] for row in rows],
+            [2.0, 3.0, 4.0],
+            atol=1e-6,
+        )
+        newest_vector, newest_born = trail.getNewest()
+        np.testing.assert_allclose(_storedBloch(newest_vector), [4.0, 0.0, 0.0], atol=1e-6)
+        self.assertEqual(newest_born, 4.0)
 
     def testSamplesSinceRevision(self) -> None:
         """Return only samples recorded after a revision marker."""
@@ -83,7 +95,11 @@ class TrailRingTest(unittest.TestCase):
             trail.record((float(index), 0.0, 0.0), float(index))
 
         rows = trail.getSamplesSince(2)
-        self.assertEqual([row[0] for row in rows], [2.0])
+        np.testing.assert_allclose(
+            [_storedBloch(row[:3])[0] for row in rows],
+            [2.0],
+            atol=1e-6,
+        )
 
     def testResizeKeepsNewest(self) -> None:
         """Shrink and grow without losing the newest samples or their order."""
@@ -92,14 +108,19 @@ class TrailRingTest(unittest.TestCase):
             trail.record((float(index), 0.0, 0.0), float(index))
 
         trail.resize(3)
-        self.assertEqual([row[0] for row in trail.getChronological()], [2.0, 3.0, 4.0])
+        np.testing.assert_allclose(
+            [_storedBloch(row[:3])[0] for row in trail.getChronological()],
+            [2.0, 3.0, 4.0],
+            atol=1e-6,
+        )
 
         trail.resize(6)
         trail.record((5.0, 0.0, 0.0), 5.0)
         trail.record((6.0, 0.0, 0.0), 6.0)
-        self.assertEqual(
-            [row[0] for row in trail.getChronological()],
+        np.testing.assert_allclose(
+            [_storedBloch(row[:3])[0] for row in trail.getChronological()],
             [2.0, 3.0, 4.0, 5.0, 6.0],
+            atol=1e-6,
         )
 
     def testClearBumpsGeneration(self) -> None:
@@ -192,17 +213,19 @@ class TrailRecorderTest(unittest.TestCase):
         lab = recorder.lab.getChronological()
         rotating = recorder.rotating.getChronological()
         for lab_row, rotating_row in zip(lab, rotating):
+            lab_vector = _storedBloch(lab_row[:3])
+            rotating_vector = _storedBloch(rotating_row[:3])
             phase = 3.0 * float(lab_row[3])
             cosine = math.cos(phase)
             sine = math.sin(phase)
             expected = np.array(
                 [
-                    cosine * lab_row[0] - sine * lab_row[1],
-                    sine * lab_row[0] + cosine * lab_row[1],
-                    lab_row[2],
+                    cosine * lab_vector[0] - sine * lab_vector[1],
+                    sine * lab_vector[0] + cosine * lab_vector[1],
+                    lab_vector[2],
                 ]
             )
-            np.testing.assert_allclose(rotating_row[:3], expected, atol=1e-5)
+            np.testing.assert_allclose(rotating_vector, expected, atol=1e-5)
 
     def testDisabledTrailStillAdvances(self) -> None:
         """Advance physics without allocating or recording when disabled."""

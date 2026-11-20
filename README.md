@@ -12,17 +12,19 @@ A single-qubit Bloch sphere simulator with a ModernGL renderer, driven by a stat
 ## Requirements
 
 - Python 3.14
-- [uv](https://docs.astral.sh/uv/)
 - A desktop with OpenGL 3.3+ (Linux Wayland/X11, macOS, or Windows)
 
-Dependencies (`moderngl`, `numpy`, `pygame-ce`, `pyyaml`) are declared in `pyproject.toml` and pinned in `uv.lock`.
+Runtime dependencies are listed and pinned in `requirements.txt`.
 
 ## Install and run
 
 ```sh
 git clone https://github.com/faizsahmed2gmaildotcom/BlochSphereSim.git && cd BlochSphereSim
-uv sync
-uv run python -m blochspheresim
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m blochspheresim
 ```
 
 The simulator loads `config.yaml` from the current directory. Run the command from the repository
@@ -140,7 +142,7 @@ and the Bloch vector follows `dv/dt = gamma * v x B(t)`.
 ## Tests
 
 ```sh
-uv run python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 ```
 
 The suite covers state evolution (norm, RWA exactness, RK4 convergence, static-field limit),
@@ -151,7 +153,7 @@ conventions. There are no automated GL tests; verify rendering by running the si
 
 - **No window / GL context error**: check that your GPU driver supports OpenGL 3.3+ and that a
   desktop session is available.
-- **`pygame` font errors**: use the `pygame-ce` dependency from `uv.lock`; stock `pygame` builds
-  without SDL2_ttf cannot render labels. The import name is still `pygame`.
+- **`pygame` font errors**: install the `pygame-ce` dependency from `requirements.txt`; stock
+  `pygame` builds without SDL2_ttf cannot render labels. The import name is still `pygame`.
 - **Config edits ignored**: the file must be valid YAML, and the simulator only polls it while
   running. Errors are printed to the terminal and the previous configuration stays active.

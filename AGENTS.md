@@ -9,9 +9,10 @@ Physics and rendering are independent modules; the loop is single-threaded (phys
 
 ## Commands
 
-- Run: `uv run python -m blochspheresim`
-- Test: `uv run python -m unittest discover -s tests -v`
-- Add a dependency: `uv add <package>` (always use `uv`, never bare `pip`)
+- Run: `.venv/bin/python -m blochspheresim`
+- Test: `.venv/bin/python -m unittest discover -s tests -v`
+- Set up: `python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt`
+- Add a dependency: edit `requirements.txt`, then `.venv/bin/python -m pip install -r requirements.txt`
 - Do not swap `pygame-ce` for `pygame`: the stock pygame build has no font module. The import
   name remains `pygame`.
 
@@ -28,6 +29,7 @@ blochspheresim/
   trail.py         ring-buffer histories, fixed-grid sampler, fade math
   __main__.py      entry point
 config.yaml        runtime settings (hot-reloaded)
+requirements.txt   pinned runtime dependencies for pip
 tests/             stdlib unittest; no headless-GL tests
 plans/             specs, final plan, deferred work (gitignored)
 research/          physics reference PDF (gitignored)
@@ -81,8 +83,9 @@ Follow `faiz-code-style`:
 - Sample by **simulated time**, never by frame or distance. `TrailRecorder.advance` sub-steps
   `BlochState.advanceTime` onto the `trail_sample_interval` grid; physics must end at the same
   `lab_time` it would without sampling. RWA chunking is exact; full-model chunking stays <1e-6 deg.
-- Each frame has its own fixed-capacity ring (`Trail`) storing `(x, y, z, born)` float32 in Bloch
-  space. Lab records `getVector()`; rotating records `getDisplayVector(True)` **at capture time**.
+- Each frame has its own fixed-capacity ring (`Trail`) storing `(x, y, z, born)` float32. `record`
+  converts the incoming Bloch-space vector to OpenGL space, so the renderer uploads stored positions
+  directly. Lab records `getVector()`; rotating records `getDisplayVector(True)` **at capture time**.
   Never re-project stored lab history with the current `frame_phase`: it smears into a ring.
 - Both histories are recorded every sample so `F` can switch instantly. Only the active one is
   drawn; toggling frames must not touch buffers.
