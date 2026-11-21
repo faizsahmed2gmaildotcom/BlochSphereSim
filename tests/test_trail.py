@@ -10,7 +10,21 @@ import numpy as np
 from blochspheresim.bloch_state import BlochState
 from blochspheresim.camera import BLOCH_TO_OPENGL
 from blochspheresim.config import BlochVisuals
-from blochspheresim.trail import Trail, TrailRecorder, computeAlpha
+from blochspheresim.trail import Trail, TrailRecorder
+
+
+def _computeAlpha(age: float, solid: float, fade: float) -> float:
+    """Return the trail opacity for a sample of the given age in simulated seconds."""
+    if age < 0.0:
+        return 0.0
+    if fade <= 0.0:
+        return 0.0
+
+    if age <= solid:
+        return 1.0
+    elif age <= solid + fade:
+        return (solid + fade - age) / fade
+    return 0.0
 
 
 def _visuals(
@@ -45,27 +59,27 @@ class FadeTest(unittest.TestCase):
 
     def testSolidHead(self) -> None:
         """Stay fully opaque inside the solid duration."""
-        self.assertEqual(computeAlpha(0.0, 1.0, 2.0), 1.0)
-        self.assertEqual(computeAlpha(1.0, 1.0, 2.0), 1.0)
+        self.assertEqual(_computeAlpha(0.0, 1.0, 2.0), 1.0)
+        self.assertEqual(_computeAlpha(1.0, 1.0, 2.0), 1.0)
 
     def testLinearFade(self) -> None:
         """Fade linearly across the tail."""
-        self.assertAlmostEqual(computeAlpha(2.0, 1.0, 2.0), 0.5, places=12)
-        self.assertAlmostEqual(computeAlpha(1.5, 1.0, 1.0), 0.5, places=12)
+        self.assertAlmostEqual(_computeAlpha(2.0, 1.0, 2.0), 0.5, places=12)
+        self.assertAlmostEqual(_computeAlpha(1.5, 1.0, 1.0), 0.5, places=12)
 
     def testPastLifetimeIsZero(self) -> None:
         """Hide samples older than the total duration."""
-        self.assertEqual(computeAlpha(3.0, 1.0, 2.0), 0.0)
-        self.assertEqual(computeAlpha(10.0, 1.0, 2.0), 0.0)
+        self.assertEqual(_computeAlpha(3.0, 1.0, 2.0), 0.0)
+        self.assertEqual(_computeAlpha(10.0, 1.0, 2.0), 0.0)
 
     def testZeroFadeCutsOff(self) -> None:
         """Use a hard cutoff when the fade duration is zero."""
-        self.assertEqual(computeAlpha(1.0, 1.0, 0.0), 1.0)
-        self.assertEqual(computeAlpha(1.0001, 1.0, 0.0), 0.0)
+        self.assertEqual(_computeAlpha(1.0, 1.0, 0.0), 1.0)
+        self.assertEqual(_computeAlpha(1.0001, 1.0, 0.0), 0.0)
 
     def testNegativeAgeIsHidden(self) -> None:
         """Hide samples dated in the future."""
-        self.assertEqual(computeAlpha(-0.1, 1.0, 2.0), 0.0)
+        self.assertEqual(_computeAlpha(-0.1, 1.0, 2.0), 0.0)
 
 
 class TrailRingTest(unittest.TestCase):

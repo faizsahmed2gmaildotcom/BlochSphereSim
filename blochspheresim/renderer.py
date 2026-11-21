@@ -28,6 +28,7 @@ TRAIL_STRIDE_BYTES = 16
 LATITUDE_SEGMENTS = 128
 LONGITUDE_SEGMENTS = 64
 LABEL_MARGIN = 4
+TRAIL_THICKNESS = 2.0
 
 LINE_VERTEX_SHADER = """
 #version 330 core
@@ -116,13 +117,59 @@ TRAIL_FRAGMENT_SHADER = """
 
 uniform vec4 u_color;
 
-in float v_alpha;
+in float g_alpha;
 out vec4 f_color;
 
 void main() {
-    f_color = vec4(u_color.rgb, u_color.a * v_alpha);
+    f_color = vec4(u_color.rgb, u_color.a * g_alpha);
 }
 """
+
+TRAIL_GEOMETRY_SHADER = """
+#version 330 core
+
+layout(lines) in;
+layout(triangle_strip, max_vertices = 4) out;
+
+uniform vec2 u_viewport;
+
+in float v_alpha[];
+out float g_alpha;
+
+void main() {
+    vec4 a = gl_in[0].gl_Position;
+    vec4 b = gl_in[1].gl_Position;
+
+    vec2 a_ndc = a.xy / a.w;
+    vec2 b_ndc = b.xy / b.w;
+
+    vec2 direction = normalize((b_ndc - a_ndc) * u_viewport);
+    if (length(direction) < 1e-6) {
+        return;
+    }
+
+    vec2 normal = vec2(-direction.y, direction.x);
+    vec2 offset = normal * (%f / u_viewport);
+
+    gl_Position = vec4(a.xy + offset * a.w, a.z, a.w);
+    g_alpha = v_alpha[0];
+    EmitVertex();
+
+    gl_Position = vec4(a.xy - offset * a.w, a.z, a.w);
+    g_alpha = v_alpha[0];
+    EmitVertex();
+
+    gl_Position = vec4(b.xy + offset * b.w, b.z, b.w);
+    g_alpha = v_alpha[1];
+    EmitVertex();
+
+    gl_Position = vec4(b.xy - offset * b.w, b.z, b.w);
+    g_alpha = v_alpha[1];
+    EmitVertex();
+
+    EndPrimitive();
+}
+""" % TRAIL_THICKNESS
 
 
 class _TrailBuffers:
@@ -174,6 +221,7 @@ class Renderer:
         self._trail_program = context.program(
             vertex_shader=TRAIL_VERTEX_SHADER,
             fragment_shader=TRAIL_FRAGMENT_SHADER,
+            geometry_shader=TRAIL_GEOMETRY_SHADER
         )
         self._trail_buffers: dict[str, _TrailBuffers] = {}
 
@@ -225,7 +273,7 @@ class Renderer:
         labels: LabelSet,
         trails: TrailRecorder | None = None,
         rotating: bool = False,
-    ) -> list[tuple[int, tuple[int, int, int, int]]]:
+    ) -> list[tuple[int, pygame.Rect]]:
         """Draw one frame and return the clickable label rectangles with their indices."""
         self._context.clear(*BACKGROUND_COLOR)
         view_projection = camera.getViewProjectionMatrix()
@@ -324,15 +372,13 @@ class Renderer:
         fading: float,
     ) -> None:
         """Draw the active history plus a connector from its newest sample to the vector."""
-        self._context.depth_mask = False
-
         if trail.count >= 2:
-            program = self._trail_program
-            program["u_mvp"].write(toGlBytes(view_projection))
-            program["u_now"].value = now
-            program["u_solid"].value = solid
-            program["u_fade"].value = fading
-            program["u_color"].value = TRAIL_COLOR
+            self._trail_program["u_mvp"].write(toGlBytes(view_projection))
+            self._trail_program["u_now"].value = now
+            self._trail_program["u_solid"].value = solid
+            self._trail_program["u_fade"].value = fading
+            self._trail_program["u_color"].value = TRAIL_COLOR
+            self._trail_program["u_viewport"].value = self._size
             buffers.vao.render(
                 moderngl.LINE_STRIP,
                 vertices=trail.count,
@@ -350,8 +396,6 @@ class Renderer:
             self._connector_buffer.write(connector.tobytes())
             self._line_program["u_mvp"].write(toGlBytes(view_projection))
             self._connector_vao.render(moderngl.LINES)
-
-        self._context.depth_mask = True
 
     def _buildOverlay(self) -> None:
         """Create the fullscreen quad used to composite the text texture."""

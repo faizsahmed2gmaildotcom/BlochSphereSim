@@ -13,19 +13,6 @@ SAMPLE_EPSILON = 1.0e-12
 TRAIL_SAMPLE_WIDTH = 4
 
 
-def computeAlpha(age: float, solid: float, fade: float) -> float:
-    """Return the trail opacity for a sample of the given age in simulated seconds."""
-    if age < 0.0:
-        return 0.0
-    if age <= solid:
-        return 1.0
-    if fade <= 0.0:
-        return 0.0
-    if age >= solid + fade:
-        return 0.0
-    return (solid + fade - age) / fade
-
-
 class Trail:
     """Fixed-capacity chronological ring of position/birth-time samples."""
 
